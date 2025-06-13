@@ -239,7 +239,7 @@ WHERE prescriber.specialty_description = 'Pain Management'
 
 SELECT prescriber.npi, drug.drug_name, SUM(prescription.total_claim_count) AS number_of_claims 
 FROM prescriber                                 
-CROSS JOIN drug -- Combining every prescriber with every drug
+UNION ALL drug -- Combining every prescriber with every drug
 LEFT JOIN prescription
 ON prescriber.npi = prescription.npi AND drug.drug_name = prescription.drug_name -- LEFT JOIN to get claims for the combinations                                             
 GROUP BY prescriber.npi, drug.drug_name                                     
@@ -254,3 +254,67 @@ LEFT JOIN prescription
 ON prescriber.npi = prescription.npi AND drug.drug_name = prescription.drug_name -- LEFT JOIN to get claims for the combinations                                             
 GROUP BY prescriber.npi, drug.drug_name                                     
 ORDER BY prescriber.npi, drug.drug_name;
+
+
+Bonus Questions: 
+
+-- 2. c. Are there any specialties that appear in the prescriber table that have no associated prescriptions in the prescription table?
+
+
+SELECT DISTINCT prescriber.specialty_description
+FROM prescriber
+LEFT JOIN prescription
+ON prescriber.npi = prescription.npi
+WHERE prescription IS NULL;
+
+
+-- 2. d. For each specialty, report the percentage of total claims by that specialty which are for opioids. Which specialties have a high percentage of opioids?
+
+WITH ClaimsBySpecialty AS (
+    SELECT
+        prescriber.specialty_description,
+        SUM(prescription.total_claim_count) AS total_claims_for_specialty,
+        SUM(CASE
+                WHEN drug.opioid_drug_flag = 'Y' THEN prescription.total_claim_count
+                ELSE 0
+            END) AS total_opioid_claims_for_specialty
+    FROM prescriber
+    JOIN prescription
+        ON prescriber.npi = prescription.npi
+    JOIN drug
+        ON prescription.drug_name = drug.drug_name
+    GROUP BY prescriber.specialty_description
+)
+SELECT
+    cbs.specialty_description,
+    cbs.total_claims_for_specialty,
+    cbs.total_opioid_claims_for_specialty,
+    -- This calculates the percentage, handling division by zero and rounding
+    CASE
+        WHEN cbs.total_claims_for_specialty > 0 THEN
+            ROUND(
+                (CAST(cbs.total_opioid_claims_for_specialty AS NUMERIC) * 100.0) / cbs.total_claims_for_specialty,
+                2 -- Round to 2 decimal places
+            )
+        ELSE
+            0.0
+    END AS percentage_opioid_claims
+FROM ClaimsBySpecialty AS cbs
+ORDER BY percentage_opioid_claims DESC, cbs.specialty_description
+LIMIT 1;
+
+Answer: Speciality - Case Manager/Care Coordinator
+		Total Claims for Speciality - 50
+		Total Opioid Claims - 36 
+		Percentage_Opioid_Claims - 72.00
+
+
+
+
+
+
+
+
+
+
+
