@@ -149,13 +149,13 @@ Answer: opioid - $105,080,626.37
 
 -- 5.  a. How many CBSAs are in Tennessee? 
 
-
-SELECT COUNT(DISTINCT cbsa.cbsa) AS number_of_cbsas_in_tn
+SELECT COUNT(DISTINCT cbsa)
 FROM cbsa
-WHERE cbsa.cbsaname LIKE '%, TN'; 
+INNER JOIN fips_county
+USING(fipscounty)
+WHERE state LIKE 'TN'; 
 
-Answer: 6 
- 
+Answer: 10
 
 -- 5.  b. Which cbsa has the largest combined population? Which has the smallest? Report the CBSA name and total population.
 
@@ -169,6 +169,26 @@ LIMIT 1;
 
 Answer: Largest: Nashville-Davidson--Murfreesboro--Franklin, TN.  Total_Population: 1830410
 		Smallest: Morristown, TN. Total_Population: 116352
+
+
+--Can also use a union to run (1) query to get the largest and smallest
+
+
+(SELECT cbsa.cbsaname, SUM(population.population) AS total_population, 'largest' AS flag
+FROM cbsa
+INNER JOIN population
+ON cbsa.fipscounty = population.fipscounty
+GROUP BY cbsa.cbsaname -- This is grouping by both the cbsa number and name to ensure correct grouping for the name
+ORDER BY total_population DESC -- I can change to ASC to find the smallest
+LIMIT 1)
+UNION 
+(SELECT cbsa.cbsaname, SUM(population.population) AS total_population, 'smallest' AS flag
+FROM cbsa
+INNER JOIN population
+ON cbsa.fipscounty = population.fipscounty
+GROUP BY cbsa.cbsaname -- This is grouping by both the cbsa number and name to ensure correct grouping for the name
+ORDER BY total_population ASC -- I can change to ASC to find the smallest
+LIMIT 1);
 
 		
 -- 5.  c. What is the largest (in terms of population) county which is not included in a CBSA? Report the county name and population.
@@ -185,6 +205,36 @@ ORDER BY total_population DESC
 LIMIT 1;
 
 Answer: SEVIER. Population: 95523
+
+
+-- For 5 c. Krithika used this query
+
+SELECT  county,population
+FROM fips_county
+LEFT JOIN cbsa
+  ON fips_county.fipscounty=cbsa.fipscounty
+JOIN population
+  ON fips_county.fipscounty=population.fipscounty
+ WHERE cbsa.fipscounty IS  NULL
+ORDER BY population DESC;
+
+-- 5 c. Sunitha used this query
+SELECT fips_county,population,county,state
+FROM population
+INNER JOIN fips_county USING (fipscounty)
+WHERE fipscounty IN (SELECT fipscounty FROM population EXCEPT SELECT DISTINCT fipscounty FROM cbsa)
+ORDER BY population DESC;
+
+-- 5 c. Dibran used this query
+SELECT county, population
+FROM fips_county
+INNER JOIN population
+USING(fipscounty)
+WHERE fipscounty NOT IN (
+	SELECT fipscounty
+	FROM cbsa
+)
+ORDER BY population DESC;
 
 -- 6. a. Find all rows in the prescription table where total_claims is at least 3000. Report the drug_name and the total_claim_count.
 
