@@ -32,7 +32,7 @@ SELECT
 	prescriber.nppes_provider_last_org_name AS last_name,
 	prescriber.nppes_provider_first_name AS first_name,
 	prescriber.npi,
-	COUNT(prescription.total_claim_count) AS highest_claim_total 
+	SUM(prescription.total_claim_count) AS highest_claim_total 
 FROM prescriber
 INNER JOIN prescription
 ON prescriber.npi = prescription.npi
@@ -40,7 +40,8 @@ GROUP BY prescriber.npi, prescriber.nppes_provider_last_org_name, prescriber.npp
 ORDER BY highest_claim_total DESC
 LIMIT 1;
 
-Answer: Michael Cox. NPI 1356305197/Claims 379
+
+Answer: Bruce Pendley. NPI: 1881634483 Claim Total 99707
 
 --1. b. Repeat the above, but this time report the nppes_provider_first_name, nppes_provider_last_org_name, specialty_description, and the total number of claims.
 
@@ -65,13 +66,11 @@ SELECT DISTINCT prescriber.specialty_description, SUM(prescription.total_claim_c
 FROM prescriber
 INNER JOIN prescription
 ON prescriber.npi = prescription.npi
-GROUP BY prescriber.specialty_description
+GROUP BY prescriber.specialty_description -- Grouping by speciality, the SUM(prescription.total_claim_count) will add up the total_claim_count for every prescription associated with that specialty.
 ORDER BY 2  DESC
 LIMIT 1;
 
-
 Answer: Family Practice - 9752347
-
 
 
 -- 2. b. Which specialty had the most total number of claims for opioids?
@@ -104,7 +103,8 @@ Answer: INSULIN GLARGINE,HUM.REC.ANLOG. Total_Cost: 104264066.35
 
 -- 3. b. Which drug (generic_name) has the hightest total cost per day? **Bonus: Round your cost per day column to 2 decimal places. Google ROUND to see how this works.**
 
-SELECT drug.generic_name, ROUND(SUM(prescription.total_drug_cost) / SUM(prescription.total_day_supply), 2) AS cost_per_day -- sums all the drug costs, divides it by the sum of all the days supplied for that same generic name. This gives you the average cost per day across all prescriptions for that generic drug.
+SELECT drug.generic_name, ROUND(SUM(prescription.total_drug_cost) / SUM(prescription.total_day_supply), 2) AS cost_per_day -- sums all the drug costs, divides it by the sum of all the days supplied for that same generic name. 
+--This gives you the average cost per day across all prescriptions for that generic drug.
 FROM drug
 INNER JOIN prescription
 USING(drug_name) -- joining the two tables using the drug_name column
@@ -128,18 +128,6 @@ ORDER BY 1;
 
 
 -- 4  b. Building off of the query you wrote for part a, determine whether more was spent (total_drug_cost) on opioids or on antibiotics. Hint: Format the total costs as MONEY for easier comparision.
-
-SELECT drug.drug_name, SUM(prescription.total_drug_cost) AS total_cost 
-	CASE 
-		WHEN drug.opioid_drug_flag = 'Y' THEN 'opioid' 
-		AND prescription.total_drug_cost 
-		WHEN drug.antibiotic_drug_flag = 'Y'THEN 'antibiotic'
-		WHEN prescription.total_drug_cost 
-		WHEN 
-		ELSE 'neither' END drug_type
-FROM drug
-ORDER BY 1;
-
 
 SELECT
     CASE
@@ -176,7 +164,7 @@ FROM cbsa
 INNER JOIN population
 ON cbsa.fipscounty = population.fipscounty
 GROUP BY cbsa.cbsa, cbsa.cbsaname -- This is grouping by both the cbsa number and name to ensure correct grouping for the name
-ORDER BY total_population DESC
+ORDER BY total_population DESC -- I can change to ASC to find the smallest
 LIMIT 1;
 
 Answer: Largest: Nashville-Davidson--Murfreesboro--Franklin, TN.  Total_Population: 1830410
@@ -191,7 +179,7 @@ INNER JOIN fips_county
 ON population.fipscounty = fips_county.fipscounty
 LEFT JOIN cbsa 
 ON population.fipscounty = cbsa.fipscounty
-WHERE cbsa.fipscounty IS NULL
+WHERE cbsa.fipscounty IS NULL -- Using to filter or select rows where the fipscounty column in the cbsa table has a NULL value.
 GROUP BY fips_county.county
 ORDER BY total_population DESC
 LIMIT 1;
@@ -239,11 +227,12 @@ WHERE prescriber.specialty_description = 'Pain Management'
 
 SELECT prescriber.npi, drug.drug_name, SUM(prescription.total_claim_count) AS number_of_claims 
 FROM prescriber                                 
-UNION ALL drug -- Combining every prescriber with every drug
+CROSS JOIN drug -- Creating every possible pair between prescriber and every drug
 LEFT JOIN prescription
 ON prescriber.npi = prescription.npi AND drug.drug_name = prescription.drug_name -- LEFT JOIN to get claims for the combinations                                             
 GROUP BY prescriber.npi, drug.drug_name                                     
 ORDER BY prescriber.npi, drug.drug_name;
+   
     
 -- 7 c. Finally, if you have not done so already, fill in any missing values for total_claim_count with 0. Hint - Google the COALESCE function.
 
@@ -268,7 +257,9 @@ ON prescriber.npi = prescription.npi
 WHERE prescription IS NULL;
 
 
--- 2. d. For each specialty, report the percentage of total claims by that specialty which are for opioids. Which specialties have a high percentage of opioids?
+-- 2. d. For each specialty, report the percentage of total claims by that specialty which are for opioids. Which specialties have a high percentage of opioids? Used Postgres' basic syntax for creating a common table expression. Temporary Column name: ClaimsBySpecialty
+
+-- First the CTE is combining the data from the (3) tables, prescriber, prescription, and drug using the INNER JOIN
 
 WITH ClaimsBySpecialty AS (
     SELECT
@@ -277,28 +268,28 @@ WITH ClaimsBySpecialty AS (
         SUM(CASE
                 WHEN drug.opioid_drug_flag = 'Y' THEN prescription.total_claim_count
                 ELSE 0
-            END) AS total_opioid_claims_for_specialty
+            END) AS total_opioid_claims_for_specialty -- newly created column name 
     FROM prescriber
-    JOIN prescription
+   INNER JOIN prescription
         ON prescriber.npi = prescription.npi
-    JOIN drug
+   INNER JOIN drug
         ON prescription.drug_name = drug.drug_name
     GROUP BY prescriber.specialty_description
 )
-SELECT
+	SELECT -- Main Query (Next, the main query retrieves data from the CTE or temporary table cbs)
     cbs.specialty_description,
     cbs.total_claims_for_specialty,
     cbs.total_opioid_claims_for_specialty,
     -- This calculates the percentage, handling division by zero and rounding
-    CASE
-        WHEN cbs.total_claims_for_specialty > 0 THEN
+    	CASE
+        	WHEN cbs.total_claims_for_specialty > 0 THEN
             ROUND(
                 (CAST(cbs.total_opioid_claims_for_specialty AS NUMERIC) * 100.0) / cbs.total_claims_for_specialty,
                 2 -- Round to 2 decimal places
             )
-        ELSE
+        	ELSE
             0.0
-    END AS percentage_opioid_claims
+    	END AS percentage_opioid_claims
 FROM ClaimsBySpecialty AS cbs
 ORDER BY percentage_opioid_claims DESC, cbs.specialty_description
 LIMIT 1;
