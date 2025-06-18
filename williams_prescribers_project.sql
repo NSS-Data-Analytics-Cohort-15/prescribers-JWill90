@@ -267,22 +267,55 @@ WHERE total_claim_count >= 3000;
 
 SELECT prescriber.npi, drug.drug_name     
 FROM prescriber   
-CROSS JOIN
-    drug -- Creating every possible pair between a prescriber record and a drug record         
+CROSS JOIN drug         
 WHERE prescriber.specialty_description = 'Pain Management' 
     AND prescriber.nppes_provider_city = 'NASHVILLE'     
-    AND drug.opioid_drug_flag = 'Y';               
+    AND drug.opioid_drug_flag = 'Y';
+
 
 -- 7 b. Next, report the number of claims per drug per prescriber. Be sure to include all combinations, whether or not the prescriber had any claims. You should report the npi, the drug name, and the number of claims (total_claim_count).
+
+
+-- My original query-- Taking a long time to query (Time: 6:43:91/Total rows: 81487650) Saved results 
 
 SELECT prescriber.npi, drug.drug_name, SUM(prescription.total_claim_count) AS number_of_claims 
 FROM prescriber                                 
 CROSS JOIN drug -- Creating every possible pair between prescriber and every drug
 LEFT JOIN prescription
-ON prescriber.npi = prescription.npi AND drug.drug_name = prescription.drug_name -- LEFT JOIN to get claims for the combinations                                             
+ON prescriber.npi = prescription.npi AND drug.drug_name = prescription.drug_name -- LEFT JOIN to get claims for the combinations  
+WHERE prescriber.specialty_description = 'Pain Management' 
+    AND prescriber.nppes_provider_city = 'NASHVILLE'     
+    AND drug.opioid_drug_flag = 'Y'
 GROUP BY prescriber.npi, drug.drug_name                                     
 ORDER BY prescriber.npi, drug.drug_name;
-   
+
+
+
+/* Using CTE to answer 7 b.
+*/
+
+WITH tpc AS (
+    SELECT
+        p.npi,
+        p.drug_name,
+        SUM(p.total_claim_count) AS total_claims_per_drug_npi
+    FROM prescriber AS pr
+    LEFT JOIN prescription AS p
+        ON pr.npi = p.npi
+    WHERE p.total_claim_count IS NOT NULL
+    GROUP BY p.npi, p.drug_name
+)
+SELECT
+    total_claims_per_drug_npi,
+    npi,
+    drug_name
+FROM tpc
+WHERE tpc.specialty_description = 'Pain Management' 
+    AND tpc.nppes_provider_city = 'NASHVILLE'     
+    AND tpc.opioid_drug_flag = 'Y'
+GROUP BY npi, drug_name, total_claims_per_drug_npi
+ORDER BY total_claims_per_drug_npi DESC;
+
     
 -- 7 c. Finally, if you have not done so already, fill in any missing values for total_claim_count with 0. Hint - Google the COALESCE function.
 
@@ -294,6 +327,27 @@ ON prescriber.npi = prescription.npi AND drug.drug_name = prescription.drug_name
 GROUP BY prescriber.npi, drug.drug_name                                     
 ORDER BY prescriber.npi, drug.drug_name;
 
+
+/*Using CTE - including COALESCE 
+*/
+
+WITH tpc AS (
+    SELECT
+        p.npi,
+        p.drug_name,
+        COALESCE(SUM(p.total_claim_count), 0) AS total_claims_per_drug_npi 
+    FROM prescriber AS pr
+    LEFT JOIN prescription AS p
+        ON pr.npi = p.npi
+    WHERE p.total_claim_count IS NOT NULL 
+    GROUP BY p.npi, p.drug_name 
+)
+SELECT
+    total_claims_per_drug_npi,
+    npi,
+    drug_name
+FROM tpc
+ORDER BY total_claims_per_drug_npi DESC; 
 
 Bonus Questions: 
 
@@ -318,7 +372,7 @@ WITH ClaimsBySpecialty AS (
         SUM(CASE
                 WHEN drug.opioid_drug_flag = 'Y' THEN prescription.total_claim_count
                 ELSE 0
-            END) AS total_opioid_claims_for_specialty -- newly created column name 
+            END) AS total_opioid_claims_for_specialty 
     FROM prescriber
    INNER JOIN prescription
         ON prescriber.npi = prescription.npi
@@ -326,12 +380,11 @@ WITH ClaimsBySpecialty AS (
         ON prescription.drug_name = drug.drug_name
     GROUP BY prescriber.specialty_description
 )
-	SELECT -- Main Query (Next, the main query retrieves data from the CTE or temporary table cbs)
+	SELECT 
     cbs.specialty_description,
     cbs.total_claims_for_specialty,
     cbs.total_opioid_claims_for_specialty,
-    -- This calculates the percentage, handling division by zero and rounding
-    	CASE
+     	CASE
         	WHEN cbs.total_claims_for_specialty > 0 THEN
             ROUND(
                 (CAST(cbs.total_opioid_claims_for_specialty AS NUMERIC) * 100.0) / cbs.total_claims_for_specialty,
@@ -341,15 +394,40 @@ WITH ClaimsBySpecialty AS (
             0.0
     	END AS percentage_opioid_claims
 FROM ClaimsBySpecialty AS cbs
-ORDER BY percentage_opioid_claims DESC, cbs.specialty_description
-LIMIT 1;
+ORDER BY percentage_opioid_claims DESC; cbs.specialty_description
+
 
 Answer: Speciality - Case Manager/Care Coordinator
 		Total Claims for Speciality - 50
 		Total Opioid Claims - 36 
 		Percentage_Opioid_Claims - 72.00
 
+-- Dibran did it this way: 
 
+SELECT
+	specialty_description,
+	
+	SUM(
+		CASE WHEN opioid_drug_flag = 'Y' THEN total_claim_count
+		ELSE 0
+	END
+	) as opioid_claims,
+	
+	SUM(total_claim_count) AS total_claims,
+	
+	SUM(
+		CASE WHEN opioid_drug_flag = 'Y' THEN total_claim_count
+		ELSE 0
+	END
+	) * 100.0 /  SUM(total_claim_count) AS opioid_percentage
+	
+FROM prescriber
+INNER JOIN prescription
+USING(npi)
+INNER JOIN drug
+USING(drug_name)
+GROUP BY specialty_description
+ORDER BY opioid_percentage DESC;
 
 
 
